@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+if [[ ! -f mix.exs ]]; then
+  exit 100
+fi

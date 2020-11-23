@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+echo "---> Elixir Buildpack"
+
+# TODO: make these settable.
+# 1. GET ARGS
+layersdir=$1
+otp_version=23.1.4
+elixir_version=1.11.2
+
+# 2. DOWNLOAD OTP
+echo "---> Downloading and extracting OTP"
+otplayer="$layersdir/otp"
+mkdir -p "$otplayer"
+otp_url="https://github.com/elixir-buildpack/heroku-otp/releases/download/$otp_version/heroku-18.tar.gz"
+wget -q -O - "$otp_url" | tar -xzf - -C "$otplayer"
+mv "$otplayer/OTP-$otp_version"/* "$otplayer"
+rm -r "$otplayer/OTP-$otp_version"
+"$otplayer"/Install -minimal "$otplayer" > /dev/null
+
+# 3. DOWNLOAD ELIXIR
+echo "---> Downloading and extracting Elixir"
+short_otp_version=$(echo "$otp_version" | awk 'match($0, /^[0-9][0-9]/) { print substr( $0, RSTART, RLENGTH )}')
+elixirlayer="$layersdir"/elixir
+mkdir -p "$elixirlayer"
+elixir_url="https://repo.hex.pm/builds/elixir/v$elixir_version-otp-$short_otp_version.zip"
+wget -q -O "$elixirlayer/elixir.zip" "$elixir_url"
+unzip -q "$elixirlayer/elixir.zip" -d "$elixirlayer"
+rm "$elixirlayer/elixir.zip"
+chmod +x "$elixirlayer/bin"/*
+
+# 4. MAKE ERLANG and ELIXIR AVAILABLE DURING LAUNCH
+echo -e 'launch = true' > "$otplayer.toml"
+echo -e 'launch = true' > "$elixirlayer.toml"
+
+# 5. MAKE ERLANG AND ELIXIR AVAILABLE TO THIS SCRIPT
+export PATH="$otplayer/bin":"$elixirlayer/bin":$PATH
+export LANG=C.UTF-8
+
+# 6. SETUP REBAR AND HEX
+echo "---> Installing Rebar"
+mix local.rebar --force > /dev/null
+echo "---> Installing Hex"
+mix local.hex --force > /dev/null
+
+# 7. INSTALL AND COMPILE PACKAGES
+echo "---> Installing and compiling packages"
+mix do deps.get, deps.compile
+
+# 8. COMPILE PROJECT
+echo "---> Compiling project"
+mix compile
